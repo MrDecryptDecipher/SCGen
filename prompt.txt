@@ -1,0 +1,276 @@
+I want to build a smart contract generator called SCGen that aligns with the structure from the provided PDF. The platform should allow users to select their entity type, transaction type, and contract type via multi-level dropdowns. Based on these selections, the system should generate predefined contract templates. Additionally, users should have the option to customize contracts using an AI feature called "NIJA AI," which leverages DeepSeek-R1 via OpenRouter.  
+
+Here’s the detailed specification:  
+
+---
+
+### **1. Project Structure**  
+Create the following folder structure:  
+SCGen/
+├── backend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   └── contractRoutes.ts
+│   │   ├── controllers/
+│   │   │   └── contractController.ts
+│   │   ├── models/
+│   │   │   └── contractTemplates.ts
+│   │   ├── utils/
+│   │   │   └── aiService.ts
+│   │   └── server.ts
+│   ├── Dockerfile
+│   └── package.json
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── EntityDropdown.tsx
+│   │   │   ├── TransactionDropdown.tsx
+│   │   │   ├── ContractTypeDropdown.tsx
+│   │   │   ├── NijaiButton.tsx
+│   │   │   └── PersonaVisual.tsx
+│   │   ├── App.tsx
+│   │   └── index.tsx
+│   ├── Dockerfile
+│   └── package.json
+├── docker-compose.yml
+├── hardhat.config.ts
+├── .env
+└── README.md
+Copy
+
+---
+
+### **2. Backend (Node.js/TypeScript)**  
+- **Server Setup**:  
+  - Use Express.js with TypeScript.  
+  - Implement rate limiting and error handling middleware.  
+
+- **Contract Templates**:  
+  - Create a `contractTemplates.ts` file mapping entities, transactions, and contract types from the PDF:  
+    ```typescript  
+    export const contractMap = {  
+        'PRIVATE LIMITED COMPANY': {  
+            'B2C': ['White Label', 'Private Label', 'Wholesaling', 'Dropshipping', 'Subscription Service'],  
+            'B2B': [  
+                'Equity Tokenization',  
+                'Vesting Agreements',  
+                'Supply Chain Management',  
+                'Revenue Sharing Agreement',  
+                'Corporate Governance',  
+                'Intellectual Property Licensing'  
+            ],  
+            'B2B2C': ['White Label', 'Private Label', 'Wholesaling', 'Dropshipping', 'Subscription Service'],  
+            'B2G': ['Equity Tokenization', 'Vesting Agreements'],  
+            'C2B': ['White Label', 'Private Label'],  
+            'D2C': ['White Label', 'Private Label'],  
+            'C2C': ['White Label', 'Private Label'],  
+            'G2C': ['White Label', 'Private Label'],  
+            'G2B': ['White Label', 'Private Label']  
+        },  
+        'LIMITED LIABILITY PARTNERSHIP': {  
+            'B2C': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'B2B': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'B2B2C': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'B2G': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'C2B': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'D2C': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'C2C': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'G2C': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions'],  
+            'G2B': ['Profit Sharing Agreement', 'Dissolution Agreement', 'Partner Exit Agreement', 'Project Collaboration Agreement', 'Dispute Resolution Mechanism', 'Partner Capital Contributions']  
+        },  
+        'GENERAL PARTNERSHIP': {  
+            'B2C': ['Purchase of any assets'],  
+            'B2B': ['Purchase of any assets'],  
+            'B2B2C': ['Purchase of any assets'],  
+            'B2G': ['Purchase of any assets'],  
+            'C2B': ['Purchase of any assets'],  
+            'D2C': ['Purchase of any assets'],  
+            'C2C': ['Purchase of any assets'],  
+            'G2C': ['Purchase of any assets'],  
+            'G2B': ['Purchase of any assets']  
+        },  
+        'SOLE PROPRIETORSHIP': {  
+            'B2C': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'B2B': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'B2B2C': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'B2G': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'C2B': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'D2C': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'C2C': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'G2C': ['Sale of any assets (Sale deed)', 'Franchisee agreement'],  
+            'G2B': ['Sale of any assets (Sale deed)', 'Franchisee agreement']  
+        },  
+        'ONE PERSON COMPANY': {  
+            'B2C': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'B2B': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'B2B2C': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'B2G': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'C2B': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'D2C': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'C2C': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'G2C': ['Franchisee agreement', 'Commercialisation agreement'],  
+            'G2B': ['Franchisee agreement', 'Commercialisation agreement']  
+        },  
+        'GOVERNMENT ENTITY': {  
+            'B2C': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'B2B': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'B2B2C': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'B2G': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'C2B': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'D2C': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'C2C': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'G2C': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement'],  
+            'G2B': ['Freelancing agreement', 'Consulting contract', 'Rental agreement', 'Project management agreement']  
+        },  
+        'INDIVIDUAL': {  
+            'i2i': ['Will documentation'],  
+            'i2m': ['Parent to children agreements'],  
+            'i2G': ['Individual to Government agreements'],  
+            'C2E': ['Commercialisation agreement'],  
+            'E2C': ['Commercialisation agreement'],  
+            'B2E': ['Commercialisation agreement'],  
+            'E2B': ['Commercialisation agreement'],  
+            'G2E': ['Commercialisation agreement'],  
+            'E2G': ['Commercialisation agreement'],  
+            'E2E': ['Commercialisation agreement']  
+        }  
+    };  
+
+    export const templateMap = {  
+        'Equity Tokenization': `// SPDX-License-Identifier: MIT  
+        pragma solidity ^0.8.17;  
+        import "@openzeppelin/contracts/token/ERC20/ERC20.sol";  
+
+        contract EquityToken is ERC20 {  
+            constructor(uint256 initialSupply) ERC20("Company Equity", "EQUITY") {  
+                _mint(msg.sender, initialSupply);  
+            }  
+        }`,  
+        'Profit Sharing Agreement': `// Solana Anchor contract code`,  
+        // Add all templates from PDF here  
+    };  
+    ```  
+
+- **AI Integration**:  
+  - Build an `aiService.ts` module to call DeepSeek-R1 via OpenRouter:  
+    ```typescript  
+    import axios from 'axios';  
+    import { OPENROUTER_API_KEY } from '../.env';  
+
+    export async function generateCustomContract(prompt: string): Promise<string> {  
+        const response = await axios.post(  
+            'https://openrouter.ai/api/v1/chat/completions',  
+            {  
+                model: 'deepseek/deepseek-chat',  
+                messages: [{ role: 'user', content: prompt }],  
+            },  
+            { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` } }  
+        );  
+        return response.data.choices[0].message.content;  
+    }  
+    ```  
+
+- **API Endpoints**:  
+  - `/api/contract`: Returns predefined contract code based on dropdown selections.  
+  - `/api/generate`: Triggers AI customization with user parameters.  
+
+---
+
+### **3. Frontend (React/TypeScript)**  
+- **Multi-Dropdown UI**:  
+  - Dynamically update dropdown options based on PDF mappings.  
+  - Example `EntityDropdown.tsx`:  
+    ```tsx  
+    const EntityDropdown = ({ onSelect }: { onSelect: (entity: string) => void }) => {  
+        const entities = ['PRIVATE LIMITED COMPANY', 'LIMITED LIABILITY PARTNERSHIP', 'GENERAL PARTNERSHIP', 'SOLE PROPRIETORSHIP', 'ONE PERSON COMPANY', 'GOVERNMENT ENTITY', 'INDIVIDUAL'];  
+        return (  
+            <select onChange={(e) => onSelect(e.target.value)}>  
+                {entities.map((entity) => (  
+                    <option key={entity}>{entity}</option>  
+                ))}  
+            </select>  
+        );  
+    };  
+    ```  
+
+- **NIJA AI Button**:  
+  - Trigger AI customization when clicked.  
+  - Display persona visuals during processing:  
+    ```tsx  
+    const PersonaVisual = () => {  
+        const personas = ['Nanjunda', 'Achyutha', 'Sandeep'];  
+        const [activePersona, setActivePersona] = useState(0);  
+        return (  
+            <div className="persona-container">  
+                <img src={`/avatars/${personas[activePersona]}.png`} alt={personas[activePersona]} />  
+                <p>{personas[activePersona]} is processing your request...</p>  
+            </div>  
+        );  
+    };  
+    ```  
+
+---
+
+### **4. Blockchain Integration**  
+- **Hardhat Configuration**:  
+  - Use Alchemy’s Sepolia RPC:  
+    ```typescript  
+    import { HardhatUserConfig } from 'hardhat/config';  
+    import '@nomicfoundation/hardhat-toolbox';  
+
+    const config: HardhatUserConfig = {  
+        solidity: '0.8.17',  
+        networks: {  
+            sepolia: {  
+                url: 'https://eth-sepolia.g.alchemy.com/v2/gRcliAnQ2ysaJacOBBlOCd7eT9NxGLd0',  
+                accounts: [process.env.PRIVATE_KEY],  
+            },  
+        },  
+    };  
+    export default config;  
+    ```  
+
+- **Deployment Guide**:  
+  - Add a "Deploy to Sepolia" button in the UI.  
+
+---
+
+### **5. Docker Setup**  
+- **Backend Dockerfile**:  
+  ```dockerfile  
+  FROM node:18-alpine  
+  WORKDIR /app  
+  COPY backend/ ./  
+  RUN npm install --production  
+  CMD ["node", "dist/server.ts"]  
+Frontend Dockerfile:
+dockerfile
+Copy
+FROM node:18-alpine  
+WORKDIR /app  
+COPY frontend/ ./  
+RUN npm install && npm run build  
+CMD ["http-server", "./build", "-p", "8080"]  
+docker-compose.yml:
+yaml
+Copy
+version: '3'  
+services:  
+  backend:  
+    build: ./backend  
+    ports:  
+      - "3000:3000"  
+    environment:  
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}  
+  frontend:  
+    build: ./frontend  
+    ports:  
+      - "8080:8080"  
+6. Environment Variables
+Create .env with:
+Copy
+OPENROUTER_API_KEY=your_openrouter_key  
+PRIVATE_KEY=your_ethereum_private_key  
+7. Documentation
+README.md: Include setup instructions, API endpoints, and deployment guides.
