@@ -1,16 +1,14 @@
 # Dependencies
 node_modules/
-.pnp/
+/.pnp
 .pnp.js
 
 # Testing
-coverage/
+/coverage
 
 # Production
-dist/
-build/
-frontend/build/
-backend/dist/
+/build
+/dist
 
 # Environment files
 .env
@@ -19,47 +17,60 @@ backend/dist/
 .env.test.local
 .env.production.local
 
-# Logs
-logs/
-*.log
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
+# IDE and editor files
 .idea/
+.vscode/
+*.swp
+*.swo
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+*.pem
 
-# TypeScript
-*.tsbuildinfo
+# Cache directories
+.cache/
+.next/
+.nuxt/
+.temp/
 
-# Vite
-.vite/
+# Build output
+*.log
+*.pid
+*.seed
+*.pid.lock
 
-# Hardhat
-cache/
-artifacts/
-typechain/
-typechain-types/
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
 
-# Contract artifacts
-contract_response.json
+# Optional npm cache directory
+.npm
 
-# Docker
-.docker/
+# Optional eslint cache
+.eslintcache
 
-# Temporary files
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Local Netlify folder
+.netlify
+
+# Misc
+*.bak
 *.tmp
 *.temp
-.cache/
-
-# IDE specific
-.qodo/
+.env.*.local
