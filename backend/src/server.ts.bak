@@ -3,18 +3,16 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import axios, { AxiosError } from 'axios';
-import { ethers, Log } from 'ethers';
+import axios from 'axios';
+import { ethers } from 'ethers';
 import { Server, Socket } from 'socket.io';
 import { createServer } from 'http';
-import { generateCustomContract } from './utils/aiService';
-import https from 'https';
-import fs from 'fs';
+import { WebSocketProvider } from 'ethers/providers';
+import { Log } from 'ethers';
 
 // Import ABIs from JSON files
-// Using import statements for better TypeScript compatibility
-import AggregatorV3InterfaceABI from '@chainlink/contracts/abi/v0.8/AggregatorV3Interface.json';
-import ChainlinkClientABI from '@chainlink/contracts/abi/v0.8/ChainlinkClient.json';
+const AggregatorV3InterfaceABI = require('@chainlink/contracts/abi/v0.8/AggregatorV3Interface.json');
+const ChainlinkClientABI = require('@chainlink/contracts/abi/v0.8/ChainlinkClient.json');
 
 dotenv.config();
 
@@ -23,29 +21,8 @@ const envVars = {
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
   AIML_API_KEY: process.env.AIML_API_KEY || '',
   AIML_API_URL: process.env.AIML_API_URL || 'https://api.aimlapi.com/v1',
-  TOGETHER_API_KEY: process.env.TOGETHER_API_KEY || '',
   NODE_ENV: process.env.NODE_ENV || 'development'
 };
-
-// Add API key validation here, before the AIML_API_CONFIG
-const API_KEYS = {
-  TOGETHER: process.env.TOGETHER_API_KEY,
-  OPENROUTER: process.env.OPENROUTER_API_KEY,
-  AIML: process.env.AIML_API_KEY
-};
-
-// Validate essential API keys
-if (!API_KEYS.TOGETHER && !API_KEYS.OPENROUTER && !API_KEYS.AIML) {
-  console.error('No API keys configured for AI providers. At least one is required.');
-  process.exit(1);
-}
-
-console.log('API Configuration:', {
-  TOGETHER: API_KEYS.TOGETHER ? 'Configured' : 'Missing',
-  OPENROUTER: API_KEYS.OPENROUTER ? 'Configured' : 'Missing',
-  AIML: API_KEYS.AIML ? 'Configured' : 'Missing'
-});
-
 
 // AIML API configuration
 const AIML_API_CONFIG = {
@@ -132,57 +109,9 @@ startServer(DEFAULT_PORT).catch((error) => {
   process.exit(1);
 });
 
-// Create HTTPS server if certificates exist
-let httpsServer;
-try {
-  const privateKey = fs.readFileSync('/etc/letsencrypt/live/13.126.230.108.nip.io/privkey.pem', 'utf8');
-  const certificate = fs.readFileSync('/etc/letsencrypt/live/13.126.230.108.nip.io/fullchain.pem', 'utf8');
-  const credentials = { key: privateKey, cert: certificate };
-  httpsServer = https.createServer(credentials, app);
-  
-  // Initialize Socket.IO for HTTPS
-  const httpsIo = new Server(httpsServer, {
-    cors: {
-      origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://13.126.230.108:3000', 'https://your-surge-domain.sh'],
-      methods: ['GET', 'POST', 'OPTIONS'],
-      credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin']
-    },
-    path: '/socket.io',
-    transports: ['websocket', 'polling'],
-    allowEIO3: true,
-  });
-  
-  // Mirror event handlers for HTTPS server
-  httpsIo.on('connection', handleSocketConnection);
-  
-  // Start HTTPS server
-  httpsServer.listen(8443, () => {
-    console.log('HTTPS server running on port 8443');
-  });
-} catch (error) {
-  console.log('HTTPS server not started due to missing certificates:', error);
-}
-
-// Extract socket connection handler
-function handleSocketConnection(socket: Socket) {
-  console.log('Client connected:', socket.id);
-  
-  socket.on('error', (error) => {
-    console.error('Socket error:', error);
-    socket.emit('error', { message: 'Internal socket error', details: error.message });
-  });
-  
-  socket.on('disconnect', (reason) => {
-    console.log('Client disconnected:', socket.id, 'Reason:', reason);
-  });
-  
-  // Add your existing subscribe-events handler here
- 
-
 // CORS configuration with proper origins
 const corsOptions = {
-  origin: ['http://localhost:3000', 'http://13.126.230.108:3000', 'https://scgen.surge.sh'],
+  origin: '*', // Allow all origins for now
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin', 'Access-Control-Allow-Methods', 'Access-Control-Allow-Headers'],
   credentials: true,
@@ -209,7 +138,7 @@ app.use(helmet({
 // Initialize Socket.IO with proper CORS
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://13.126.230.108:3000', 'https://scgen.surge.sh'],
+    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://13.126.230.108:3000'],
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Access-Control-Allow-Origin']
@@ -223,7 +152,6 @@ const io = new Server(httpServer, {
   upgradeTimeout: 30000,
   maxHttpBufferSize: 1e8
 });
-
 
 // Add connection logging
 io.engine.on("connection_error", (err) => {
@@ -246,18 +174,6 @@ app.use(express.urlencoded({
   extended: true,
   parameterLimit: 50000
 }));
-
-// Test route to verify that the backend is accessible
-app.get('/', (req: Request, res: Response) => {
-  res.send('Backend is running!');
-});
-
-// Test route to verify that the backend is accessible
-app.get('/', (req: Request, res: Response) => {
-  res.send('Backend is running!');
-});
-
-
 
 // Initialize providers with proper error handling
 const providers: Record<string, ethers.JsonRpcProvider> = {};
@@ -299,90 +215,6 @@ try {
   console.error('Error initializing providers:', error);
 }
 
-// Add formatError function here, before the global axios interceptor
-interface ApiError {
-  message: string;
-  code: string;
-  status?: number;
-  details?: any;
-  severity: 'error' | 'warning';
-}
-
-function formatError(error: AxiosError): ApiError {
-  if (error.response) {
-    // Server responded with an error
-    const data = error.response.data as { message?: string; error?: string };
-    return {
-      message: data.message || data.error || 'Server error occurred',
-      code: 'SERVER_ERROR',
-      status: error.response.status,
-      details: error.response.data,
-      severity: error.response.status >= 500 ? 'error' : 'warning'
-    };
-  } else if (error.request) {
-    // Request made but no response received
-    console.error('Network Error:', error.request);
-    return {
-      message: 'No response from server. Please check your internet connection.',
-      code: 'NETWORK_ERROR',
-      details: error.request,
-      severity: 'error'
-    };
-  } else {
-    // Error in setting up the request
-    console.error('Request Error:', error.message);
-    return {
-      message: error.message || 'An error occurred while setting up the request',
-      code: 'REQUEST_ERROR',
-      severity: 'error'
-    };
-  }
-}
-
-// Global axios request retry and error handling interceptor
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    // Check if the error is from an axios request
-    if (!error.config) {
-      return Promise.reject(error);
-    }
-
-    const { config } = error;
-    
-    // Default retry configuration
-    config.retryCount = config.retryCount || 0;
-    config.maxRetries = config.maxRetries || 3;
-
-    // Don't retry on these status codes
-    if (error.response && 
-        (error.response.status === 400 || 
-         error.response.status === 401 || 
-         error.response.status === 403)) {
-      return Promise.reject(error);
-    }
-
-    // Check if we can retry
-    if (config.retryCount < config.maxRetries) {
-      config.retryCount += 1;
-
-      // Exponential backoff
-      const backoffDelay = Math.pow(2, config.retryCount) * 1000; // Exponential delay
-
-      console.log(`Retrying request (${config.retryCount}/${config.maxRetries}), Delay: ${backoffDelay}ms`);
-
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, backoffDelay));
-
-      // Retry the request
-      return axios(config);
-    }
-
-    // If max retries reached, reject
-    return Promise.reject(error);
-  }
-);
-
 // Convert types to enums for value checking
 enum EntityType {
   PRIVATE_LIMITED = 'PRIVATE LIMITED COMPANY',
@@ -407,12 +239,6 @@ enum ContractType {
   STAKING = 'Staking Contract',
   LIQUIDITY = 'Liquidity Pool'
 }
-
-// Add timestamp middleware for tracking request processing time
-app.use((req: Request, res: Response, next: () => void) => {
-  (req as any).startTime = Date.now();
-  next();
-});
 
 interface PersonaConfig {
   role: string;
@@ -826,31 +652,19 @@ interface ModelConfig {
     FALLBACK: string;
     LARGE: string;
   };
-  TOGETHER: {
-    DEFAULT: string;
-    FALLBACK: string;
-    LARGE: string;
-    CODE: string;
-  };
 }
 
 // Single source of truth for model configuration
 const MODEL_CONFIG: ModelConfig = {
   OPENROUTER: {
-    DEFAULT: 'cognitivecomputations/dolphin3.0-r1-mistral-24b:free',
-    FALLBACK: 'mistralai/Mistral-7B-Instruct-v0.1',
-    LARGE: 'meta-llama/Llama-2-70b-chat:free'
+    DEFAULT: 'cognitivecomputations/dolphin3.0-r1-mistral-24b:free', // Free tier model
+    FALLBACK: 'openchat/openchat-7b:free',                          // Another free tier option
+    LARGE: 'openai/gpt-3.5-turbo'                                  // Affordable option
   },
   AIML: {
     DEFAULT: 'mistralai/Mistral-7B-Instruct-v0.2',
     FALLBACK: 'mistralai/Mistral-7B-Instruct-v0.1',
     LARGE: 'mistralai/Mixtral-8x7B-Instruct-v0.1'
-  },
-  TOGETHER: {
-    DEFAULT: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
-    FALLBACK: 'mistralai/Mistral-7B-Instruct-v0.2',
-    LARGE: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
-    CODE: 'Qwen/Qwen2.5-Coder-32B-Instruct'
   }
 };
 
@@ -1095,71 +909,6 @@ async function makeAIMLRequest(
     throw new Error('Invalid response format from AIML API');
   } catch (error) {
     console.error('AIML API request failed:', error);
-    throw error;
-  }
-}
-
-// Add Together API request function
-async function makeTogetherRequest(
-  model: string,
-  messages: any[],
-  maxTokens: number
-): Promise<any> {
-  try {
-    console.log(`Making Together API request with model: ${model}`);
-
-    const apiKey = process.env.TOGETHER_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error('Together API key is not configured');
-    }
-
-    const response = await axios.post(
-      'https://api.together.xyz/v1/chat/completions',
-      {
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature: 0.7,
-        stream: false
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    console.log('Together API Response:', JSON.stringify(response.data, null, 2));
-
-    if (response.data?.choices?.[0]?.message?.content) {
-      if (response.data.usage) {
-        trackTokenUsage('together', {
-          total: response.data.usage.total_tokens,
-          cost: calculateCost(response.data.usage, model)
-        });
-      }
-      return response.data.choices[0].message.content;
-    }
-
-    throw new Error('Invalid response format from Together API');
-  } catch (error) {
-    // Detailed error logging to diagnose issues
-    console.error('Together API request failed for model:', model);
-    
-    if (axios.isAxiosError(error) && error.response) {
-      console.error('Together API Response:', JSON.stringify(error.response.data, null, 2));
-      
-      // Specific error handling for common issues
-      if (error.response.status === 401) {
-        console.error('Authentication error: Check your Together API key format');
-      } else if (error.response.status === 402) {
-        console.error('Payment required: Your account needs more credits');
-      } else if (error.response.status === 429) {
-        console.error('Rate limit exceeded: Your requests are being throttled');
-      }
-    }
-    
     throw error;
   }
 }
@@ -2200,7 +1949,6 @@ function extractContractName(contractCode: string): string {
 }
 
 // Contract generation endpoint
-// Contract generation endpoint
 app.post('/api/generate', async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
@@ -2938,29 +2686,7 @@ contract LLPBase is
     event PartnerAdded(address indexed account, uint256 capital, uint256 share);
     event CapitalContributed(address indexed partner, uint256 amount);
     event ProfitDistributed(uint256 amount);
-}`,
-    B2C: `
-    struct CustomerConfig {
-        uint256 purchaseLimit;
-        uint256 cooldownPeriod;
-        bool requiresKYC;
-    }
-    mapping(address => CustomerConfig) public customerConfigs;
-    mapping(address => bool) public kycApproved;
-    
-    event CustomerConfigured(address indexed customer, uint256 limit, uint256 cooldown);
-    event KYCStatusUpdated(address indexed customer, bool status);`,
-    B2B: `
-    struct BusinessPartner {
-        bool isVerified;
-        uint256 creditLimit;
-        uint256 settlementPeriod;
-        string partnershipType;
-    }
-    mapping(address => BusinessPartner) public businessPartners;
-    
-    event PartnerVerified(address indexed partner, string partnershipType);
-    event CreditLimitUpdated(address indexed partner, uint256 newLimit);`
+}`
   }
 };
 
@@ -3083,205 +2809,238 @@ const CACHE_DURATIONS: Record<string, number> = {
   default: 24 * 60 * 60 * 1000 // 1 day
 };
 
-// Helper function to calculate cost based on token usage (keeping this function)
-function calculateCost(usage: { prompt_tokens: number; completion_tokens: number }, model: string): number {
-  // Pricing from API documentation (keeping and updating this)
-  const rates: Record<string, { prompt: number; completion: number }> = {
-    // OpenRouter rates (free for specified model)
-    'google/gemini-exp-1206:free': { prompt: 0, completion: 0 },
+// Add token usage optimization
+interface TokenOptimization {
+  templateReuse: number;
+  customPromptSize: number;
+  cacheBenefit: number;
+}
 
-    // AIML rates (estimated, adjust as needed)
-    'mistralai/codestral-2501': { prompt: 0.000007, completion: 0.000020 }, // Example rate, adjust
-
-    // Together AI rates (free for specified model)
-    'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free': { prompt: 0, completion: 0 },
+function calculateTokenOptimization(
+  template: string,
+  customization: string
+): TokenOptimization {
+  const templateTokens = Math.ceil(template.length / 4);
+  const customTokens = Math.ceil(customization.length / 4);
+  
+  return {
+    templateReuse: templateTokens,
+    customPromptSize: customTokens,
+    cacheBenefit: templateTokens * 0.8 // 80% saving on template reuse
   };
+}
 
+// // Model configurations for both APIs
+// const MODEL_CONFIG = {
+//   OPENROUTER: {
+//     DEFAULT: 'cognitivecomputations/dolphin3.0-r1-mistral-24b:free',
+//     FALLBACK: 'mistralai/mistral-large',
+//     LARGE: 'openai/gpt-4'
+//   },
+//   AIML: {
+//     DEFAULT: 'mistralai/Mistral-7B-Instruct-v0.2',
+//     FALLBACK: 'mistralai/Mistral-7B-Instruct-v0.1',
+//     LARGE: 'mistralai/Mixtral-8x7B-Instruct-v0.1'
+//   }
+// };
+// 
+// // Update processWithPersona to handle both APIs
+// async function processWithPersona(
+  prompt: string,
+  persona: PersonaType,
+  contractType: ContractType,
+  entityType: EntityType,
+  transactionType: TransactionType
+): Promise<string> {
+  const config = PERSONA_CONFIGS[persona];
+  
+  // Select appropriate models for both APIs based on persona
+  let openRouterModel = '';
+  let aimlModel = '';
+  let maxTokens = config.maxTokens;
+
+  if (persona === 'achyutha') {
+    openRouterModel = MODEL_CONFIG.OPENROUTER.LARGE;
+    aimlModel = MODEL_CONFIG.AIML.LARGE;
+    maxTokens = 8000;
+  } else if (persona === 'sandeep') {
+    openRouterModel = MODEL_CONFIG.OPENROUTER.FALLBACK;
+    aimlModel = MODEL_CONFIG.AIML.FALLBACK;
+    maxTokens = 4000;
+  } else {
+    openRouterModel = MODEL_CONFIG.OPENROUTER.DEFAULT;
+    aimlModel = MODEL_CONFIG.AIML.DEFAULT;
+  }
+
+  const messages = [
+    {
+      role: 'system',
+      content: `You are ${persona}, specializing in smart contract ${config.expertise}. Focus on: ${config.focus.join(', ')}`
+    },
+    {
+      role: 'user',
+      content: prompt
+    }
+  ];
+
+  console.log(`Making OpenRouter API request to model: ${openRouterModel}`);
+  console.log(`Estimated prompt tokens: ${Math.ceil(prompt.length / 4)}`);
+
+  // Try OpenRouter first
+  try {
+    return await makeOpenRouterRequest(openRouterModel, messages, maxTokens);
+  } catch (openRouterError) {
+    console.error('OpenRouter request failed, falling back to AIML API:', openRouterError);
+    
+    // If OpenRouter fails, try AIML API
+    try {
+      return await makeAIMLRequest(aimlModel, messages, maxTokens);
+    } catch (aimlError) {
+      console.error('AIML API request failed:', aimlError);
+      throw new Error('Failed to generate contract: All API attempts failed');
+    }
+  }
+}
+
+// Helper function to calculate cost based on token usage
+function calculateCost(usage: { prompt_tokens: number; completion_tokens: number }, model: string): number {
+  // Pricing from API documentation
+  const rates: Record<string, { prompt: number; completion: number }> = {
+    // OpenRouter rates (free for Dolphin model)
+    'cognitivecomputations/dolphin3.0-r1-mistral-24b:free': { prompt: 0, completion: 0 },
+    
+    // AIML rates (estimated, adjust as needed)
+    'mistralai/Mistral-7B-Instruct-v0.2': { prompt: 0.000007, completion: 0.000020 },
+    'mistralai/Mistral-7B-Instruct-v0.1': { prompt: 0.000007, completion: 0.000020 },
+    'mistralai/Mixtral-8x7B-Instruct-v0.1': { prompt: 0.000010, completion: 0.000030 }
+  };
+  
   const rate = rates[model] || { prompt: 0, completion: 0 };
   return (usage.prompt_tokens * rate.prompt) + (usage.completion_tokens * rate.completion);
 }
 
-// Unified implementation of processWithPersona, incorporating Together AI, OpenRouter, and AIML API
+// Find the processWithPersona function and update it to use free tier models
 async function processWithPersona(
   prompt: string,
   persona: PersonaType,
   contractType: ContractType,
   entityType: EntityType,
-  transactionType: TransactionType,
-  options?: { useFreeModel?: boolean }
+  transactionType: TransactionType
 ): Promise<string> {
   const config = PERSONA_CONFIGS[persona];
-  console.log(`Processing with persona ${persona}`);
+  
+  // Select models based on persona, prioritizing free tier options
+  let openRouterModel = '';
+  let aimlModel = '';
+  let maxTokens = config.maxTokens;
 
-  // Model selection: Prioritize Together AI, then OpenRouter, then AIML API
-  const togetherModel = 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free';
-  const openRouterModel = 'google/gemini-exp-1206:free';
-  const aimlModel = 'mistralai/codestral-2501';
-  const maxTokens = config.maxTokens;
-
-  // Enhance prompt with specific instructions for each persona
-  let systemMessage = `You are ${persona}, specializing in smart contract ${config.expertise}. Focus on: ${config.focus.join(', ')}`;
-
-  // Add specific instructions for code generation
   if (persona === 'achyutha') {
-    systemMessage += `. IMPORTANT: Generate COMPLETE smart contract code with NO truncation. Include ALL necessary:
-  1. SPDX license identifier and pragma statement
-  2. Required imports from OpenZeppelin or other libraries
-  3. Full contract implementation with ALL functions, modifiers, and events
-  4. Detailed NatSpec comments for all functions
-  5. Full implementation of all features requested
-  6. Security best practices and gas optimizations
-  Never end the code with ellipses or placeholders - provide the complete implementation.`;
+    // Code generation needs more powerful model but with reduced tokens
+    openRouterModel = 'cognitivecomputations/dolphin3.0-r1-mistral-24b:free';
+    aimlModel = MODEL_CONFIG.AIML.LARGE;
+    maxTokens = 6000; // Reduce token usage for free tier
+  } else if (persona === 'sandeep') {
+    // Security analysis can use simpler model
+    openRouterModel = 'openchat/openchat-7b:free';
+    aimlModel = MODEL_CONFIG.AIML.FALLBACK;
+    maxTokens = 3000; // Reduce token usage for free tier
+  } else {
+    // Analysis phase
+    openRouterModel = MODEL_CONFIG.OPENROUTER.DEFAULT;
+    aimlModel = MODEL_CONFIG.AIML.DEFAULT;
+    maxTokens = 3000; // Reduce token usage for free tier
   }
 
   const messages = [
-    { role: 'system', content: systemMessage },
-    { role: 'user', content: prompt },
+    {
+      role: 'system',
+      content: `You are ${persona}, specializing in smart contract ${config.expertise}. Focus on: ${config.focus.join(', ')}`
+    },
+    {
+      role: 'user',
+      content: prompt
+    }
   ];
 
-  console.log(`Models selected:
-  - Together: ${togetherModel}
-  - OpenRouter: ${openRouterModel}
-  - AIML: ${aimlModel}
-`);
-  console.log(`Using token limit: ${maxTokens}`);
-
-  // Track start time for performance monitoring
-  const startTime = Date.now();
-
-  // Try APIs in sequence with fallbacks
-  try {
-    if (process.env.TOGETHER_API_KEY) {
-      console.log(`Attempting Together API with model: ${togetherModel}`);
-      // Use the Together AI chat completions API as provided by the user
-      const togetherResponse = await axios.post(
-        'https://api.together.xyz/v1/chat/completions',
-        {
-          model: togetherModel,
-          messages: messages,
-          max_tokens: maxTokens
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.TOGETHER_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      const responseText = togetherResponse.data.choices[0].message.content;
-      console.log(
-        `Together API request completed in ${Date.now() - startTime}ms`
-      );
-
-      // Basic response validation (adjust as needed)
-      if (!responseText || responseText.length < 50) {
-        throw new Error(
-          'Together API returned an empty or very short response.'
-        );
-      }
-
-      return responseText;
-    }
-  } catch (error) {
-    console.error(
-      `Together API request failed: ${error instanceof Error ? error.message : 'Unknown error'
-      }`
-    );
-  }
+  console.log(`Processing with persona ${persona}, trying OpenRouter model: ${openRouterModel}`);
+  console.log(`Estimated prompt tokens: ${Math.ceil(prompt.length / 4)}`);
 
   try {
-    if (process.env.OPENROUTER_API_KEY) {
-      console.log(`Trying OpenRouter model: ${openRouterModel}`);
-      // Use the OpenRouter chat completions API as provided by the user
-
-      const openRouterResponse = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: openRouterModel,
-          messages: [
-            {
-              role: 'system',
-              content: systemMessage
-            },
-            {
-              "role": "user",
-              "content": prompt
-            }
-          ],
-          max_tokens: maxTokens
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:3000', // Add your site URL here
-            'X-Title': 'SCGen', // Add your site name here
-          },
-        }
-      );
-
-      const responseText =
-        openRouterResponse.data.choices[0].message.content;
-      console.log(
-        `OpenRouter request completed in ${Date.now() - startTime}ms`
-      );
-
-      if (!responseText || responseText.length < 50) {
-        throw new Error(
-          'OpenRouter returned an empty or very short response.'
-        );
-      }
-
-      return responseText;
-    }
+    // First try OpenRouter with free tier model
+    return await makeOpenRouterRequest(openRouterModel, messages, maxTokens);
   } catch (error) {
-    console.error(
-      `OpenRouter request failed: ${error instanceof Error ? error.message : 'Unknown error'
-      }`
-    );
-  }
-
-  try {
-    if (process.env.AIML_API_KEY) {
-      console.log(`Trying AIML API with model: ${aimlModel}`);
-      // Use the AIML API as provided by the user
-      const aimlResponse = await axios.post(
-        `${envVars.AIML_API_URL}/chat/completions`,
-        {
-          model: aimlModel,
-          messages: messages,
-          max_tokens: maxTokens
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${envVars.AIML_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      const responseText = aimlResponse.data.choices[0].message.content;
-      console.log(
-        `AIML API request completed in ${Date.now() - startTime}ms`
-      );
-
-      if (!responseText || responseText.length < 50) {
-        throw new Error('AIML API returned an empty or very short response.');
-      }
-
-      return responseText;
+    console.error(`${persona} request failed after ${Date.now() - startTime}ms`);
+    
+    // If OpenRouter fails, try AIML API
+    try {
+      console.log(`Switching to AIML API with model: ${aimlModel}`);
+      return await makeAIMLRequest(aimlModel, messages, maxTokens);
+    } catch (aimlError) {
+      // All attempts failed
+      throw new Error('Failed to generate content with either API');
     }
-  } catch (error) {
-    console.error(
-      `AIML API request failed: ${error instanceof Error ? error.message : 'Unknown error'
-      }`
-    );
   }
-
-  // If all API calls fail, throw an error
-  throw new Error('Failed to generate content with any available API');
 }
 
-// Removing the /api/test-apis route since we have integrated the API calls
-// directly into processWithPersona and are handling fallbacks.
-}
+// Add this route near the other API routes
+app.get('/api/test-apis', async (req: Request, res: Response) => {
+  const results: any = {
+    openrouter: { success: false, message: 'Not tested' },
+    aiml: { success: false, message: 'Not tested' }
+  };
+  
+  try {
+    // Test OpenRouter with free tier model
+    try {
+      const messages = [{ role: 'user', content: 'Say hello in one short sentence.' }];
+      const openrouterModel = 'cognitivecomputations/dolphin3.0-r1-mistral-24b:free';
+      
+      console.log(`Testing OpenRouter API with model: ${openrouterModel}`);
+      const openrouterResponse = await makeOpenRouterRequest(openrouterModel, messages, 50);
+      
+      results.openrouter = {
+        success: true,
+        response: openrouterResponse,
+        model: openrouterModel
+      };
+    } catch (error) {
+      results.openrouter = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        apiKey: process.env.OPENROUTER_API_KEY ? `Set (${process.env.OPENROUTER_API_KEY.substring(0, 8)}...)` : 'Not set'
+      };
+    }
+    
+    // Test AIML API
+    try {
+      const messages = [{ role: 'user', content: 'Say hello in one short sentence.' }];
+      const aimlModel = 'mistralai/Mistral-7B-Instruct-v0.2';
+      
+      console.log(`Testing AIML API with model: ${aimlModel}`);
+      const aimlResponse = await makeAIMLRequest(aimlModel, messages, 50);
+      
+      results.aiml = {
+        success: true,
+        response: aimlResponse,
+        model: aimlModel
+      };
+    } catch (error) {
+      results.aiml = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        apiKey: process.env.AIML_API_KEY ? `Set (${process.env.AIML_API_KEY.substring(0, 8)}...)` : 'Not set'
+      };
+    }
+    
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Error in API testing:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});

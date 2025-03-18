@@ -63,6 +63,9 @@ export async function generateCustomizedContract(req: Request<{}, {}, ContractRe
                 error: 'Missing required parameters'
             });
         }
+        
+        console.log(`Generating contract: ${entityType} / ${transactionType} / ${contractType}`);
+        console.log('Customizations:', customizations);
 
         // Generate using AI
         const result = await generateCustomContract(
@@ -74,13 +77,19 @@ export async function generateCustomizedContract(req: Request<{}, {}, ContractRe
 
         return res.json({
             success: true,
-            result
+            data: {
+                analysis: result.analysis,
+                code: result.code,
+                security: result.security
+            },
+            processingTime: Date.now() - (req as any).startTime || 0
         });
     } catch (error) {
         console.error('Contract generation error:', error);
         return res.status(500).json({
             success: false,
-            error: 'Failed to generate contract'
+            error: 'Failed to generate contract',
+            details: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 }
@@ -125,4 +134,4 @@ export async function getContractOptions(req: Request<{}, {}, {}, ContractOption
             error: 'Failed to get contract options'
         });
     }
-} 
+}

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import Dropdowns from './components/Dropdowns';
 import { NIJAAI } from './components/NIJAAI';
 import { PersonaVisual } from './components/PersonaVisual';
+import { Debug } from './components/Debug';
 import axios from 'axios';
 
 const personas = [
@@ -45,6 +46,9 @@ const theme = createTheme({
 
 const AppContainer = motion(Box);
 
+// API configuration
+const API_URL = process.env.REACT_APP_API_URL || 'http://13.126.230.108:3001';
+
 function App() {
   const [entityType, setEntityType] = useState('');
   const [transactionType, setTransactionType] = useState('');
@@ -77,19 +81,26 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 3000)); // Simulate processing time
       }
 
-      const response = await axios.post('http://13.126.230.108:3002/api/generate', {
+      const response = await axios.post(`${API_URL}/api/generate`, {
         entityType,
         transactionType,
         contractType,
       }, {
-        timeout: 30000,
+        timeout: 120000, // 2 minutes timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      setGeneratedContract(response.data.contract);
-      setSuccess('Contract generated successfully!');
+      if (response.data.success) {
+        setGeneratedContract(response.data.data.contract);
+        setSuccess('Contract generated successfully!');
+      } else {
+        throw new Error(response.data.error || 'Failed to generate contract');
+      }
     } catch (err) {
       console.error('Error generating contract:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate contract. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
     } finally {
       setIsProcessing(false);
       setCurrentPersona('');
@@ -149,6 +160,7 @@ function App() {
               }}
               generatedContract={generatedContract}
               onError={handleError}
+              setGeneratedContract={setGeneratedContract}
             />
           </Box>
 
@@ -239,6 +251,8 @@ function App() {
               {success}
             </Alert>
           </Snackbar>
+
+          <Debug />
         </Container>
       </AppContainer>
     </ThemeProvider>
